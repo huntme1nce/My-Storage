@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>Excel → Click‑to‑Call (Black • v7 • Paste + Search last 4)</title>
+<style>
+  :root{
+    --bg:#000; --fg:#fff; --muted:#b7b7b7; --card:#000; --border:#2a2a2a;
+    --ok:#2ecc71; --bad:#ff6b6b;
+    --pill:#1b1b1b; --pill2:#2c2c2c;
+    --call-bg:#0d223f; --call-ok:#1e3b22; --call-b:#245a93; --call-bok:#2e6a3a;
+    --sms-bg:#3a2a0a; --sms-b:#6a4a1a;
+    --dup-bg:#3a1230; --dup-b:#6a2a58; --dup-t:#ffc0e3;
+    --editor-font-size:14px; --editor-line-height:1.5;
+    --match-bg:#1a1a1a; --match-outline:#6aa6ff66;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto;background:var(--bg);color:var(--fg)}
+  header{
+    padding:10px 12px;border-bottom:1px solid var(--border);
+    position:sticky;top:0;background:#000;z-index:2;display:flex;gap:10px;align-items:center
+  }
+  h1{margin:0;font-size:16px}
+  .health{
+    margin-left:auto;font-size:12px;padding:3px 8px;border-radius:999px;
+    border:1px solid var(--border);color:#cfe0ff;background:#0f0f0f
+  }
+  .health.ok{background:#0f2a17;color:#d7ffe2;border-color:#1f5834}
+
+  /* Layout: left narrower */
+  .wrap{
+    display:grid; grid-template-columns: minmax(240px, 340px) 1fr;
+    gap:12px; padding:12px; height:calc(100vh - 56px)
+  }
+  @media (max-width:900px){.wrap{grid-template-columns:1fr;height:auto}}
+
+  .card{ background:var(--card); border:1px solid var(--border);
+    border-radius:12px; padding:10px; display:flex; flex-direction:column; min-height:280px }
+
+  /* --- Left paste area with aligned line numbers --- */
+  .editorWrap{
+    display:flex; width:100%; flex:1; min-height:220px; border:1px solid var(--border);
+    border-radius:10px; overflow:hidden; background:#0e0e0e;
+    font-family:ui-monospace, Menlo, Consolas, monospace;
+    font-size:var(--editor-font-size); line-height:var(--editor-line-height);
+  }
+  #gutter{
+    width:54px; background:#0a0a0a; color:#8a8a8a; border-right:1px solid #1b1b1b;
+    padding:10px 8px 10px 10px; text-align:right; user-select:none; overflow:hidden;
+    white-space:pre; font-family:inherit; font-size:var(--editor-font-size); line-height:var(--editor-line-height);
+  }
+  #input{
+    border:0; outline:none; margin:0; flex:1; padding:10px; background:#0e0e0e; color:var(--fg);
+    resize:vertical; font-family:inherit; font-size:var(--editor-font-size); line-height:var(--editor-line-height);
+  }
+  #input[wrap="off"]{white-space:pre; overflow:auto}
+
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}
+  .btn{
+    background:#101010;color:#e0e0e0;border:1px solid var(--border);
+    border-radius:8px;padding:6px 10px;font-size:13px;cursor:pointer
+  }
+  .btn:hover{border-color:#5a5a5a}
+  .danger{color:#ffb3b3;border-color:#7a2b2b}.danger:hover{border-color:#9a3b3b}
+  .msg{color:var(--muted);font-size:13px;margin-left:auto}
+  .hint{color:var(--muted);font-size:12px}
+
+  /* --- Right controls (Search) --- */
+  .searchBar{
+    display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px;
+  }
+  #search5{
+    background:#0f0f0f; color:#fff; border:1px solid #3a3a3a; border-radius:8px;
+    padding:6px 8px; font-size:13px; width:140px; letter-spacing:1px;
+  }
+  #searchMsg{ color:#cfe0ff; font-size:13px; margin-left:auto }
+
+  /* --- Right list --- */
+  #outputBox{
+    flex:1;overflow:auto;border:1px solid var(--border);
+    border-radius:10px;padding:6px;background:#0b0b0b
+  }
+  .rowItem{display:flex;align-items:center;gap:10px;padding:6px 8px;border-bottom:1px solid #1d1d1d}
+  .rowItem:last-child{border-bottom:none}
+  .rowItem.match{
+    background:var(--match-bg);
+    outline:2px solid var(--match-outline);
+    border-radius:8px;
+  }
+  .idx{
+    min-width:44px;text-align:center;padding:4px 8px;border-radius:999px;
+    background:var(--pill);color:#d7d7d7;font-weight:700;font-size:12px;user-select:none
+  }
+  .idx.clicked{background:var(--pill2)}
+
+  .call{
+    display:inline-block;text-decoration:none;font-weight:700;color:#e6f0ff;
+    background:var(--call-bg);border:1px solid var(--call-b);
+    padding:6px 10px;border-radius:10px;white-space:nowrap
+  }
+  .call.clicked{background:var(--call-ok);border-color:var(--call-bok);color:#dcffe4}
+
+  .smsBtn{
+    display:inline-block;text-decoration:none;font-weight:700;color:#ffdca3;
+    background:var(--sms-bg);border:1px solid var(--sms-b);
+    padding:6px 10px;border-radius:10px;white-space:nowrap; position:relative;
+    transition: transform 120ms ease-out;
+  }
+  .smsBtn.clicked{ background:#555; border-color:#777; color:#fff; }
+  @keyframes pulseGray {
+    0%{ transform:scale(1); box-shadow:0 0 0 0 rgba(255,255,255,0) }
+    50%{ transform:scale(1.05); box-shadow:0 0 0 6px rgba(255,255,255,0.08) }
+    100%{ transform:scale(1); box-shadow:0 0 0 0 rgba(255,255,255,0) }
+  }
+  .smsBtn.animateOnce{ animation: pulseGray 320ms ease-out }
+
+  .msgSelect{
+    background:#111;color:#e6e6e6;border:1px solid #3a3a3a;border-radius:8px;
+    padding:6px 8px;font-size:12px;max-width:560px
+  }
+  .dup{
+    display:inline-block;font-size:12px;font-weight:700;color:var(--dup-t);
+    background:var(--dup-bg);border:1px solid var(--dup-b);
+    padding:4px 8px;border-radius:999px;user-select:none
+  }
+  .error{color:var(--bad)}
+
+@keyframes blink-bg {
+  0% { background-color: green; }
+  50% { background-color: transparent; }
+  100% { background-color: green; }
+}
+.ok {
+  animation: blink-bg 1s infinite;
+  color: white;
+  padding: 5px;
+  border-radius: 4px;
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Excel → Click‑to‑Call (Black • v7)</h1>
+<span class="health" id="health">INIT</span>
+</header>
+<div class="wrap">
+<!-- LEFT (narrow) -->
+<section class="card">
+<strong>Paste numbers (one per line or column):</strong>
+<div class="editorWrap">
+<div id="gutter">2</div>
+<textarea id="input" placeholder="Example:
+0917 123 4567
+(+63) 917-222-3333
+02 8123 4567
++1 (415) 555-0100" wrap="off"></textarea>
+</div>
+<div class="row">
+<button class="btn" id="sample">Paste sample</button>
+<button class="btn danger" id="clearAll" title="Clear input and list">Clear</button>
+<button class="btn" id="clearMarks" title="Clear clicked marks only">Clear clicked marks</button>
+<span class="msg" id="msg"></span>
+</div>
+<p class="hint">
+      Choose a message from the dropdown beside <b>TEXT</b>, then click <b>TEXT</b> to open your SMS app (Phone Link on Windows if set as default for <code>SMS</code>).
+    </p>
+</section>
+<!-- RIGHT -->
+<section class="card">
+<!-- 🔎 New search bar -->
+<div class="searchBar">
+<label for="search5">Search last 5 digits:</label>
+<input id="search5" inputmode="numeric" maxlength="5" pattern="[0-9]*" placeholder="e.g., 34567" type="text"/>
+<button class="btn" id="doSearch">Find</button>
+<button class="btn" id="clearSearch">Clear search</button>
+<span id="searchMsg"></span>
+</div>
+<strong>Clickable list (1 column, numbering in front)</strong>
+<div id="outputBox"><div id="output"></div></div>
+</section>
+</div>
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const $input = $("#input"), $gutter = $("#gutter"),
+        $msg = $("#msg"), $output = $("#output"),
+        $sample=$("#sample"), $clearAll=$("#clearAll"),
+        $clearMarks=$("#clearMarks"), $health=$("#health");
+
+  // Search elements
+  const $search5 = $("#search5"), $doSearch = $("#doSearch"),
+        $clearSearch = $("#clearSearch"), $searchMsg = $("#searchMsg");
+
+  // READY badge
+  const ready = () => { $health.textContent = "READY"; $health.classList.add("ok"); };
+
+  // Safe localStorage helpers
+  const LS = {
+    get(k){ try{ return localStorage.getItem(k); }catch{ return null; } },
+    set(k,v){ try{ localStorage.setItem(k,v); }catch{} },
+    keys(prefix){ const ks=[]; try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k && (!prefix || k.startsWith(prefix))) ks.push(k);} }catch{} return ks; },
+    remove(k){ try{ localStorage.removeItem(k); }catch{} }
+  };
+
+  // Click marks persisted
+  const markKey = (type, num) => `clicked:${type}:${num}`;
+  const isMarked = (type, num) => LS.get(markKey(type,num)) === "1";
+  const setMarked = (type, num) => LS.set(markKey(type,num), "1");
+  const clearMarks = () => LS.keys("clicked:").forEach(k=>LS.remove(k));
+
+  // Per-number chosen message persisted
+  const msgKey = (num) => `msg:${num}`;
+  const getRowMsg = (num) => LS.get(msgKey(num)) || "";
+  const setRowMsg = (num, text) => LS.set(msgKey(num), text || "");
+
+  // Message options (per-row dropdown)
+  const MSG_OPTIONS = [
+    {label:"VCF/Onsite", text:"Do you have a pc or a laptop that you can use for the assessment?"},
+    {label:"VCF", text:"Great! Great! Please join the Zoom meeting at  pm. Check your email for the Zoom link. Use a PC or a Laptop for the assessment."},
+    {label:"Onsite", text:"Can you visit our site instead, we have 2 sites. In Robinsons Galleria and in Mabolo Panagdait. Where would you prefer to visit?"},
+    {label:"Schedule/Requirements", text:"Please bring a valid ID and a pen. Visit anytime from 10 am to 5 pm."},
+    {label:"Online", text:"Good day! This is Foundever Cebu. We received your application submitted online. May we know if you're available for the assessment and interview today?"},
+    {label:"ERP", text:"Hi, this is Foundever Cebu. One of our employees referred you to us. Are you currently looking for a job and interested in applying? Please reply, YES or NO."},
+    {label:"XRP", text:"Hi, this is Foundever Cebu. Are you still looking for a job? Are you interested in applying? YES or NO."},
+    {label:"MAKI", text:"Hi, this is Foundever Cebu. We just want to follow up on your Maki assessment and Behavioral interview. Please confirm if you're done."},
+    {label:"BI", text:"Hi , this is Foundever Cebu. we would like to know if you're able to attend the Initial interview?"},
+    {label:"Disconnected", text:"Hi, this is Foundever Cebu. This is a follow-up call regarding your application with us. Please confirm if you're still interested in continuing your application."},
+    {label:"MaxHub Loc", text:"It's located at the back of Robinsons Galleria, right beside Summit Hotel and in front of Benedicto College."},
+    {label:"MaxHub notif", text:"REMINDER: Foundever Assessment/Interview on , anytime from 10AM to 5PM at Robinsons Galleria. Bring a valid ID and a pen."},
+    {label:"Synergis notif", text:"REMINDER: Foundever Assessment/Interview on , anytime from 10AM to 5PM at Synergis IT Center, Mabolo. Bring a valid ID and a pen."},
+    {label:"VCF notif", text:"REMINDER: Foundever Assessment/Interview on , anytime from 10AM to 5PM via Zoom. Check your email for the link. Use a PC or a Laptop for the assessment."}
+  ];
+
+  // Normalize numbers: keep +; 00→+; else ensure exactly one leading 0
+  const sanitizeRaw = (raw) => {
+    const m = (raw||"").match(/(\+?\d[\d\s().-]*\d)/);
+    return m ? m[1] : (raw||"");
+  };
+  const normalize = (raw) => {
+    let s = sanitizeRaw(raw).trim();
+    s = s.replace(/[^\d+]/g, "").replace(/(?!^)\+/g,"");
+    if (!s) return "";
+    if (s.startsWith("00")) s = "+" + s.slice(2);
+    if (s.startsWith("+")) return s;
+    s = s.replace(/^0+/, "");
+    return "0" + s;
+  };
+  const onlyDigits = (s) => (s||"").replace(/\D/g,"");
+  const last5 = (s) => {
+    const d = onlyDigits(s);
+    return d.slice(-5);
+  };
+
+  const buildSmsHref = (num, body) => (body && body.trim())
+      ? `sms:${num}?body=${encodeURIComponent(body.trim())}` : `sms:${num}`;
+
+  // Parse pasted input
+  const parseInput = (text) => {
+    const lines = (text||"").replace(/\t/g,"\n").split(/\r?\n/);
+    const out = [];
+    const seen = new Set();
+    for (const line of lines) {
+      const t = (line||"").trim();
+      if (!t) continue;
+      const digits = (t.match(/\d/g)||[]).length;
+      if (digits < 5) continue;
+      const normalized = normalize(t);
+      if (!normalized) continue;
+      const duplicate = seen.has(normalized);
+      if (!duplicate) seen.add(normalized);
+      out.push({ normalized, tel:`tel:${normalized}`, duplicate });
+    }
+    return out;
+  };
+
+  // Left gutter numbering (start at 2)
+  function updateGutter(){
+    const text = $input.value;
+    const lineCount = text.split(/\r?\n/).length || 1;
+    let s = "";
+    for (let i=0;i<lineCount;i++){ s += (i+2) + (i<lineCount-1 ? "\n" : ""); }
+    $gutter.textContent = s || "2";
+    $gutter.scrollTop = $input.scrollTop;
+  }
+  $input.addEventListener("scroll", ()=>{ $gutter.scrollTop = $input.scrollTop; });
+
+  let lastItems = [];
+  function updateStatus(){
+    const total = lastItems.length;
+    let clickedAny = 0;
+    for (const it of lastItems){
+      if (isMarked("call", it.normalized) || isMarked("sms", it.normalized)) clickedAny++;
+    }
+    $msg.textContent = total ? `${total} item${total>1?"s":""} • Clicked: ${clickedAny}` : `Paste numbers to generate clickable links`;
+  }
+
+  // Clear prior matches in UI
+  function clearMatches(){
+    $searchMsg.textContent = "";
+    document.querySelectorAll("#output .rowItem.match").forEach(el => el.classList.remove("match"));
+  }
+
+  // Search by last 5 digits
+  function doSearch(){
+    clearMatches();
+    const q = ($search5.value||"").replace(/\D/g,"").slice(0,5);
+    if (q.length !== 5){
+      $searchMsg.textContent = "Enter exactly 5 digits.";
+      return;
+    }
+    const rows = Array.from(document.querySelectorAll("#output .rowItem"));
+    const matches = [];
+    rows.forEach(row => {
+      const num = row.dataset.num || "";
+      if (last5(num) === q){
+        row.classList.add("match");
+        // read displayed index (already starts at 2)
+        const idxEl = row.querySelector(".idx");
+        const lineNo = idxEl ? idxEl.textContent.trim() : "";
+        matches.push(lineNo || "?");
+      }
+    });
+    if (!matches.length){
+      $searchMsg.textContent = "No matches.";
+      return;
+    }
+    $searchMsg.textContent = `Found ${matches.length} match${matches.length>1?"es":""} at line${matches.length>1?"s":""}: ${matches.join(", ")}`;
+    // Scroll first match into view, centered
+    const first = document.querySelector("#output .rowItem.match");
+    if (first) first.scrollIntoView({behavior:"smooth", block:"center"});
+  }
+
+  // Render rows
+  function render(items){
+    $output.innerHTML = "";
+    for (let i=0;i<items.length;i++){
+      const num = items[i].normalized;
+      const row = document.createElement("div");
+      row.className = "rowItem";
+      row.dataset.num = num;                 // for searching
+      row.dataset.last5 = last5(num) || "";  // not strictly needed but handy
+
+      // Index (start at 2)
+      const idx = document.createElement("span");
+      idx.className = "idx";
+      idx.textContent = String(i+2);
+
+      // Call link
+      const aCall = document.createElement("a");
+      aCall.className = "call";
+      aCall.href = items[i].tel;
+      aCall.textContent = num;
+
+      // Text link
+      const aSms = document.createElement("a");
+      aSms.className = "smsBtn";
+      aSms.dataset.num = num;
+      aSms.textContent = "Text";
+
+      // Dropdown messages
+      const sel = document.createElement("select");
+      sel.className = "msgSelect";
+      const def = document.createElement("option");
+      def.value = ""; def.textContent = "— Msg —";
+      sel.appendChild(def);
+      for (const opt of MSG_OPTIONS){
+        const o = document.createElement("option");
+        o.value = opt.text; o.textContent = opt.label;
+        sel.appendChild(o);
+      }
+
+      // Restore per-row message & clicked states
+      const savedText = getRowMsg(num);
+      if (savedText){
+        for (const o of sel.options){ if (o.value === savedText){ o.selected = true; break; } }
+      }
+      aSms.href = buildSmsHref(num, savedText);
+      if (isMarked("call", num)){ aCall.classList.add("clicked"); idx.classList.add("clicked"); }
+      if (isMarked("sms",  num)){ aSms.classList.add("clicked"); }
+
+      // Handlers
+      sel.addEventListener("change", ()=>{
+        const chosen = sel.value || "";
+        setRowMsg(num, chosen);
+        aSms.href = buildSmsHref(num, chosen);
+      });
+      aCall.addEventListener("click", ()=>{
+        aCall.classList.add("clicked"); idx.classList.add("clicked");
+        setMarked("call", num);
+        updateStatus();
+      });
+      aSms.addEventListener("click", ()=>{
+        aSms.classList.add("clicked");
+        setMarked("sms", num);
+        aSms.classList.remove("animateOnce"); void aSms.offsetWidth; aSms.classList.add("animateOnce");
+        updateStatus();
+      });
+      aSms.addEventListener("animationend", (e)=>{
+        if (e.animationName === "pulseGray") aSms.classList.remove("animateOnce");
+      });
+
+      // Duplicate badge
+      if (items[i].duplicate){
+        const dup = document.createElement("span");
+        dup.className = "dup";
+        dup.textContent = "Duplicate";
+        dup.title = "This number already appeared earlier in the list.";
+        row.appendChild(dup);
+      }
+
+      // Assemble
+      row.appendChild(idx);
+      row.appendChild(aCall);
+      row.appendChild(aSms);
+      row.appendChild(sel);
+      const laterDup = row.querySelector(".dup"); if (laterDup) row.appendChild(laterDup);
+
+      $output.appendChild(row);
+    }
+  }
+
+  function run(){
+    try{
+      lastItems = parseInput($input.value);
+      render(lastItems);
+      updateStatus();
+      // Clear any previous search highlights when list changes
+      clearMatches();
+    }catch(e){
+      console.error(e);
+      $msg.innerHTML = `<span class="error">Error: ${e?.message||"Unexpected"}</span>`;
+    }
+  }
+
+  // Wiring
+  let t; const schedule = ()=>{ clearTimeout(t); t = setTimeout(run, 100); };
+  $input.addEventListener("input", ()=>{ updateGutter(); schedule(); });
+  $input.addEventListener("paste", ()=> setTimeout(()=>{ updateGutter(); run(); }, 0));
+  $input.addEventListener("scroll", ()=>{ $gutter.scrollTop = $input.scrollTop; });
+
+  $sample.addEventListener("click", ()=>{
+    $input.value = `0917 123 4567
+(+63) 917-222-3333
+02 8123 4567
++1 (415) 555-0100
+0917 123 4567`; // includes a duplicate
+    updateGutter(); run();
+  });
+  $clearAll.addEventListener("click", ()=>{
+    $input.value = ""; $output.innerHTML = "";
+    lastItems = []; updateGutter(); updateStatus(); clearMatches();
+  });
+  $clearMarks.addEventListener("click", ()=>{ clearMarks(); updateStatus(); });
+
+  // Search handlers
+  $doSearch.addEventListener("click", doSearch);
+  $clearSearch.addEventListener("click", ()=>{ $search5.value=""; clearMatches(); $search5.focus(); });
+  $search5.addEventListener("keypress", (e)=>{ if (e.key === "Enter") doSearch(); });
+  $search5.addEventListener("input", ()=>{
+    // Auto-run when exactly 5 digits typed
+    const v = ($search5.value||"").replace(/\D/g,"");
+    if (v.length === 5){ doSearch(); }
+  });
+
+  // Init
+  window.addEventListener("DOMContentLoaded", ()=>{
+    ready();
+    updateGutter();
+    $input.focus();
+  });
+})();
+</script>
+</body>
+</html>
+<div id="health"></div>
+
+<style>
+@keyframes blink-bg {
+  0% { background-color: green; }
+  50% { background-color: transparent; }
+  100% { background-color: green; }
+}
+.ok {
+  animation: blink-bg 2s infinite;
+  background-color: green;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 5px;
+}
+</style>
+
+<script>
+  const $health = document.getElementById("health");
+  const ready = () => {
+    $health.textContent = "READY";
+    $health.classList.add("ok");
+  };
+</script>
